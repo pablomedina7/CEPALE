@@ -13,7 +13,7 @@ const cleanString = (s: string) =>
 
 const isoDate = (s: string) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.trim());
-  if (!m) throw new Error("Fecha inválida: usar YYYY-MM-DD");
+  if (!m) throw new Error("Fecha inválida: usar YYYY-MM-DD");  //no es precisamente necesario cambiar de año mes dia ya que es un formato internacional
   return `${m[1]}-${m[2]}-${m[3]}`;
 };
 
