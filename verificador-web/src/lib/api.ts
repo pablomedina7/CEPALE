@@ -1,39 +1,62 @@
-export type HashJsonResponse = {
-  hash: `0x${string}`;
-  meta: string;
-  stable: string;
-};
-export type HashFileResponse = {
-  hash: `0x${string}`;
-  meta: string;
-  filename: string;
-};
-export type VerifyResponse =
-  | { exists: false }
-  | { exists: true; anchoredAt: number; anchoredAtISO: string };
+import { Transaction, VerifyResponse, RegisterComprobanteIn, RegisterComprobanteOut } from "./types"
 
-const BASE = process.env.NEXT_PUBLIC_API_BASE_URL!;
+// Switch de mocks
+const USE_MOCKS = String(process.env.NEXT_PUBLIC_USE_MOCKS).toLowerCase() === "true"
+const BASE = process.env.NEXT_PUBLIC_API_BASE_URL
 
-export async function hashFromJson(payload: unknown): Promise<HashJsonResponse> {
-  const res = await fetch(`${BASE}/hash/json`, {
+// ------------ Implementación MOCK ------------
+import {
+  dbListTransactions,
+  dbVerifyTransaction,
+  dbRegisterComprobante,
+} from "@/mocks/db"
+
+// ------------ Implementación REAL (fetch) ------------
+async function realListTransactions(): Promise<Transaction[]> {
+  if (!BASE) throw new Error("Falta NEXT_PUBLIC_API_BASE_URL en .env.local")
+  const res = await fetch(`${BASE}/transactions`, { // <-- CAMBIAR AQUÍ 
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  })
+  if (!res.ok) throw new Error(`Error listando: ${res.status}`)
+  return res.json()
+}
+
+async function realVerifyTransaction(hash: string): Promise<VerifyResponse> {
+  if (!BASE) throw new Error("Falta NEXT_PUBLIC_API_BASE_URL en .env.local")
+  const res = await fetch(`${BASE}/verify?hash=${encodeURIComponent(hash)}`, { // <-- CAMBIAR AQUÍ
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  })
+  if (!res.ok) throw new Error(`Error verificando: ${res.status}`)
+  return res.json()
+}
+
+async function realRegisterComprobante(
+  payload: RegisterComprobanteIn
+): Promise<RegisterComprobanteOut> {
+  if (!BASE) throw new Error("Falta NEXT_PUBLIC_API_BASE_URL en .env.local")
+  const res = await fetch(`${BASE}/comprobantes/register`, { // <-- CAMBIAR AQUÍ
     method: "POST",
-    headers: { "Content-Type":"application/json" },
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error("Error /hash/json");
-  return res.json();
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error(`No se pudo registrar: ${res.status}`)
+  return res.json()
 }
 
-export async function hashFromFile(file: File): Promise<HashFileResponse> {
-  const fd = new FormData();
-  fd.append("file", file);
-  const res = await fetch(`${BASE}/hash/file`, { method:"POST", body: fd });
-  if (!res.ok) throw new Error("Error /hash/file");
-  return res.json();
+// ------------ Exports que usa tu UI ------------
+export async function listTransactions(): Promise<Transaction[]> {
+  return USE_MOCKS ? dbListTransactions() : realListTransactions()
 }
 
-export async function verifyHash(hash: `0x${string}`): Promise<VerifyResponse> {
-  const res = await fetch(`${BASE}/verify/${hash}`);
-  if (!res.ok) throw new Error("Error /verify");
-  return res.json();
+export async function verifyTransaction(hash: string): Promise<VerifyResponse> {
+  return USE_MOCKS ? dbVerifyTransaction(hash) : realVerifyTransaction(hash)
+}
+
+export async function registerComprobante(
+  payload: RegisterComprobanteIn
+): Promise<RegisterComprobanteOut> {
+  return USE_MOCKS ? dbRegisterComprobante(payload) : realRegisterComprobante(payload)
 }

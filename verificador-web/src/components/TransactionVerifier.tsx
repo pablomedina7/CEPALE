@@ -1,13 +1,27 @@
 "use client"
 
-import React, { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
-import { Button } from "./ui/button"
-import { Input } from "./ui/input"
-import { Badge } from "./ui/badge"
-import { CheckCircle, XCircle, Search, RefreshCw, Shield } from "lucide-react"
+import { useMemo, useState } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { verifyTransaction, registerComprobante, listTransactions } from "@/lib/api"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import {
+  CheckCircle,
+  XCircle,
+  Search,
+  RefreshCw,
+  Shield,
+} from "lucide-react"
 
-interface Transaction {
+type Tx = {
   id: string
   hash: string
   sender: string
@@ -16,88 +30,91 @@ interface Transaction {
   verified: boolean
 }
 
-// Datos de ejemplo - en producción vendrían del backend
-const mockTransactions: Transaction[] = [
-  {
-    id: "1",
-    hash: "0xa1b2c3d4e5f6789012345678901234567890abcdef",
-    sender: "usuario@ejemplo.com",
-    amount: 1250.5,
-    date: "2024-01-15T10:30:00Z",
-    verified: true,
-  },
-  {
-    id: "2",
-    hash: "0xf6e5d4c3b2a1098765432109876543210fedcba09",
-    sender: "empresa@negocio.com",
-    amount: 750.0,
-    date: "2024-01-14T15:45:00Z",
-    verified: false,
-  },
-  {
-    id: "3",
-    hash: "0x123456789abcdef0123456789abcdef0123456789a",
-    sender: "cliente@tienda.com",
-    amount: 2100.75,
-    date: "2024-01-13T09:15:00Z",
-    verified: true,
-  },
-]
+export function TransactionVerifier() {
+  const qc = useQueryClient()
 
-function TransactionVerifierComponent() {
-  const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions)
   const [searchHash, setSearchHash] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+  const [verifyingHash, setVerifyingHash] = useState<string | null>(null)
+  const [registeringHash, setRegisteringHash] = useState<string | null>(null)
 
-  const handleVerifyTransaction = async (hash: string) => {
-    setIsLoading(true)
-    // Simular llamada al backend
-    await new Promise((resolve) => setTimeout(resolve, 800))
+  // --- DATA ---
+  const {
+    data: transactions = [],
+    isFetching,
+    isError,
+    refetch,
+  } = useQuery<Tx[]>({
+    queryKey: ["transactions"],
+    queryFn: listTransactions,
+  })
 
-    // Simular verificación - en producción sería una llamada real al backend
-    const updatedTransactions = transactions.map((tx) =>
-      tx.hash === hash ? { ...tx, verified: Math.random() > 0.3 } : tx,
+  // --- MUTATIONS ---
+  const verifyMut = useMutation({
+    mutationFn: async (hash: string) => {
+      setVerifyingHash(hash)
+      return verifyTransaction(hash)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] })
+    },
+    onSettled: () => {
+      setVerifyingHash(null)
+    },
+  })
+
+  const registerMut = useMutation({
+    mutationFn: async (hash: string) => {
+      setRegisteringHash(hash)
+      return registerComprobante({ hash })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["transactions"] })
+    },
+    onSettled: () => {
+      setRegisteringHash(null)
+    },
+  })
+
+  // --- SEARCH (client-side) ---
+  const filtered = useMemo(() => {
+    const term = searchHash.trim().toLowerCase()
+    if (!term) return transactions
+    return transactions.filter((tx: Tx) =>
+      tx.hash.toLowerCase().includes(term)
     )
-    setTransactions(updatedTransactions)
-    setIsLoading(false)
+  }, [transactions, searchHash])
+
+  const handleSearch = () => {
+    // Si preferís pedir al back: crear endpoint /transactions?hash=...
+    // Por ahora usamos filtrado client-side con useMemo arriba.
   }
 
-  const handleSearchTransaction = () => {
-    if (!searchHash.trim()) return
-
-    // En producción, esto haría una búsqueda en el backend
-    const foundTransaction = transactions.find((tx) => tx.hash.toLowerCase().includes(searchHash.toLowerCase()))
-
-    if (foundTransaction) {
-      // Resaltar la transacción encontrada - aquí simplemente la movemos al inicio
-      setTransactions((prev) => [foundTransaction, ...prev.filter((p) => p.id !== foundTransaction.id)])
-    }
-  }
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("es-ES", {
+  // --- FORMATTERS ---
+  const formatDate = (iso: string) =>
+    new Date(iso).toLocaleString("es-ES", {
       year: "numeric",
       month: "short",
-      day: "numeric",
+      day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
     })
-  }
 
-  const formatAmount = (amount: number) => {
-    return new Intl.NumberFormat("es-ES", {
+  const formatAmount = (amount: number) =>
+    new Intl.NumberFormat("es-ES", {
       style: "currency",
       currency: "EUR",
     }).format(amount)
-  }
 
+  // --- UI ---
   return (
-    <div className="container mx-auto px-4 py-8 max-w-6xl">
+    <div className="page-container nice-scrollbar">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-3">
           <Shield className="h-8 w-8 text-primary" />
-          <h1 className="text-3xl font-bold text-foreground">Verificador de Transacciones</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Verificador de Transacciones
+          </h1>
         </div>
         <p className="text-muted-foreground text-lg">
           Verifica la autenticidad y estado de tus transacciones mediante hash único
@@ -105,13 +122,15 @@ function TransactionVerifierComponent() {
       </div>
 
       {/* Search Section */}
-      <Card className="mb-8">
+      <Card className="mb-8 glass-card card-hover shadow-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Search className="h-5 w-5" />
             Buscar Transacción
           </CardTitle>
-          <CardDescription>Ingresa el hash de la transacción para verificar su estado</CardDescription>
+          <CardDescription>
+            Ingresa el hash de la transacción para verificar su estado
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-3">
@@ -119,9 +138,9 @@ function TransactionVerifierComponent() {
               placeholder="Ingresa el hash de la transacción..."
               value={searchHash}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchHash(e.target.value)}
-              className="flex-1"
+              className="flex-1 input-elevated ring-focus"
             />
-            <Button onClick={handleSearchTransaction} className="px-6">
+            <Button onClick={handleSearch} className="px-6 ring-focus" variant="outline">
               <Search className="h-4 w-4 mr-2" />
               Buscar
             </Button>
@@ -129,91 +148,168 @@ function TransactionVerifierComponent() {
         </CardContent>
       </Card>
 
-      {/* Transactions List */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-semibold text-foreground">Lista de Transacciones</h2>
-          <Button variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
+      {/* Toolbar */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-semibold tracking-tight">
+          Lista de Transacciones
+        </h2>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => qc.invalidateQueries({ queryKey: ["transactions"] })}
+            disabled={isFetching}
+            title="Actualizar"
+            className="ring-focus"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
             Actualizar
           </Button>
         </div>
-
-        <div className="grid gap-4">
-          {transactions.map((transaction) => (
-            <Card key={transaction.id} className="transition-all hover:shadow-md">
-              <CardContent className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
-                  {/* Hash y Estado */}
-                  <div className="md:col-span-2">
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="flex items-center gap-2">
-                        {transaction.verified ? (
-                          <CheckCircle className="h-5 w-5 text-primary" />
-                        ) : (
-                          <XCircle className="h-5 w-5 text-destructive" />
-                        )}
-                        <Badge variant={transaction.verified ? "default" : "destructive"} className="text-xs">
-                          {transaction.verified ? "Verificada" : "No Verificada"}
-                        </Badge>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Hash:</p>
-                      <p className="font-mono text-sm bg-muted px-2 py-1 rounded break-all">{transaction.hash}</p>
-                    </div>
-                  </div>
-
-                  {/* Detalles de la Transacción */}
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Remitente:</p>
-                      <p className="font-medium text-sm">{transaction.sender}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Fecha:</p>
-                      <p className="text-sm">{formatDate(transaction.date)}</p>
-                    </div>
-                  </div>
-
-                  {/* Monto y Acciones */}
-                  <div className="flex flex-col items-start md:items-end gap-3">
-                    <div className="text-right">
-                      <p className="text-sm text-muted-foreground">Monto:</p>
-                      <p className="text-xl font-bold text-primary">{formatAmount(transaction.amount)}</p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleVerifyTransaction(transaction.hash)}
-                      disabled={isLoading}
-                      className="w-full md:w-auto"
-                    >
-                      {isLoading ? (
-                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Shield className="h-4 w-4 mr-2" />
-                      )}
-                      Re-verificar
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
       </div>
 
+      {/* States: error / empty / list */}
+      {isError ? (
+        <Card className="glass-card border-destructive/40 shadow-card">
+          <CardContent className="p-6">
+            <p className="text-destructive">
+              Ocurrió un error al cargar las transacciones.
+            </p>
+            <div className="mt-3">
+              <Button onClick={() => refetch()} className="btn-primary ring-focus">
+                Reintentar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : filtered.length === 0 && !isFetching ? (
+        <Card className="glass-card shadow-card">
+          <CardContent className="p-6">
+            <p className="text-muted-foreground">
+              No se encontraron transacciones con ese hash.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4">
+          {(isFetching && transactions.length === 0
+            ? Array.from({ length: 3 }).map((_, i) => ({ id: `sk${i}` }))
+            : filtered
+          ).map((t: any) => {
+            const tx: Tx | null = t.hash ? t : null // si es skeleton, no tiene hash
+            const isVerifying = tx?.hash === verifyingHash
+            const isRegistering = tx?.hash === registeringHash
+
+            return (
+              <Card
+                key={t.id}
+                className="glass-card card-hover shadow-card"
+              >
+                <CardContent className="p-6">
+                  {!tx ? (
+                    // Skeleton shimmer
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="h-6 w-40 rounded skeleton" />
+                      <div className="h-6 w-48 rounded skeleton" />
+                      <div className="h-6 w-56 rounded skeleton" />
+                      <div className="h-10 w-52 rounded skeleton" />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+                      {/* Estado + Hash */}
+                      <div className="md:col-span-2">
+                        <div className="flex items-center gap-3 mb-2">
+                          <div className="flex items-center gap-2">
+                            {tx.verified ? (
+                              <CheckCircle className="h-5 w-5 text-primary" />
+                            ) : (
+                              <XCircle className="h-5 w-5 text-destructive" />
+                            )}
+                            <Badge
+                              variant={tx.verified ? "default" : "destructive"}
+                              className={`text-xs ${tx.verified ? "badge-soft" : ""}`}
+                            >
+                              {tx.verified ? "Verificada" : "No Verificada"}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm text-muted-foreground">Hash:</p>
+                          <p className="font-mono text-sm bg-muted/60 px-2 py-1 rounded break-all">
+                            {tx.hash}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Detalles */}
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-sm text-muted-foreground">Remitente:</p>
+                          <p className="font-medium text-sm">{tx.sender}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Fecha:</p>
+                          <p className="text-sm">{formatDate(tx.date)}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">Monto:</p>
+                          <p className="text-xl font-bold text-primary">
+                            {formatAmount(tx.amount)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Acciones */}
+                      <div className="flex flex-col items-start md:items-end gap-3">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={isVerifying}
+                          onClick={() => verifyMut.mutate(tx.hash)}
+                          className="w-full md:w-auto ring-focus"
+                        >
+                          {isVerifying ? (
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Shield className="h-4 w-4 mr-2" />
+                          )}
+                          Verificar
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          disabled={isRegistering}
+                          onClick={() => registerMut.mutate(tx.hash)}
+                          className="w-full md:w-auto btn-primary ring-focus"
+                        >
+                          {isRegistering ? (
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Shield className="h-4 w-4 mr-2" />
+                          )}
+                          Registrar en Blockchain
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      )}
+
       {/* Footer Info */}
-      <Card className="mt-8 bg-muted/50">
+      <Card className="mt-8 glass-card shadow-card">
         <CardContent className="p-6">
           <div className="flex items-start gap-3">
             <Shield className="h-5 w-5 text-primary mt-0.5" />
             <div>
               <h3 className="font-semibold mb-2">Seguridad y Confianza</h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Todas las transacciones son verificadas mediante hash criptográfico único. El sistema valida
-                automáticamente la integridad y autenticidad de cada transacciones contra nuestra base de datos segura.
+                Todas las transacciones son verificadas mediante hash criptográfico único.
+                El backend realiza la validación y el registro on-chain para mantener
+                tus claves privadas fuera del navegador.
               </p>
             </div>
           </div>
@@ -222,7 +318,3 @@ function TransactionVerifierComponent() {
     </div>
   )
 }
-
-export default TransactionVerifierComponent
-export { TransactionVerifierComponent as TransactionVerifier }
-
