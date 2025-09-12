@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { hashFromJson, hashFromFile, verifyHash, type VerifyResponse } from "@/lib/api";
+import TransactionVerifier from "@/components/TransactionVerifier";
 
 type VerifyUI = (VerifyResponse & { hash: `0x${string}` }) | null;
 
@@ -74,6 +75,11 @@ export default function VerificarPage() {
             : <div className="mt-2">❌ No encontrado</div>}
         </div>
       )}
+
+  <hr />
+
+  {/* Componente de prueba: lista y verificador simulado */}
+  <TransactionVerifier />
     </main>
   );
 }
